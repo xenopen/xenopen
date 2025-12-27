@@ -1,0 +1,11 @@
+# Discord Bot
+discord.py>=2.3.2
+
+# Ollama Client
+ollama>=0.3.3
+
+# Environment Variables
+python-dotenv>=1.0.0
+
+# Async HTTP
+aiohttp>=3.9.0
