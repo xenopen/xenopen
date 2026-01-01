@@ -1,13 +1,17 @@
-# Discord AI Agent (Ollama連携)
+# Discord AI Agent - AI짱 (Ollama連携)
 
-Mac上で動作するDiscordボット。特定のDiscordチャンネルで会話を監視し、Ollamaを使用してAI応答を生成します。
+Mac上で動作するDiscordボット「AI짱」。特定のDiscordチャンネルで会話を監視し、Ollamaを使用してAI応答を生成します。
+
+AI짱は自分がDiscord botであることを認識しており、サーバーやチャンネル、ユーザーの情報を活用して応答します。
 
 ## 機能
 
-- Discordの特定チャンネルでメッセージを監視
-- Ollamaを使用したAI応答生成
-- 会話履歴の管理
-- コマンド機能（ping, reset, status）
+- 🤖 **AI짱アイデンティティ**: AIが自分をAI짱として認識し、フレンドリーに対話
+- 💬 Discordの特定チャンネルでメッセージを監視
+- 🧠 Ollamaを使用したAI応答生成（システムプロンプト対応）
+- 📝 会話履歴の管理
+- 📊 **Discord情報取得**: サーバー、チャンネル、メンバー情報にアクセス可能
+- 🔧 コマンド機能（ping, reset, status, whoami, serverinfo, channelinfo, members）
 
 ## 必要な環境
 
@@ -104,6 +108,7 @@ TARGET_CHANNEL_ID=123456789012345678
 OLLAMA_URL=http://localhost:11434
 OLLAMA_MODEL=llama2
 BOT_PREFIX=!
+BOT_NAME=AI짱
 ```
 
 ## 実行方法
@@ -131,6 +136,10 @@ python bot.py
 - `!ping` - ボットの応答性をテスト
 - `!reset` - 会話履歴をリセット
 - `!status` - ボットの状態を表示
+- `!whoami` - AI짱の自己紹介
+- `!serverinfo` - サーバー情報を表示
+- `!channelinfo` - チャンネル情報を表示
+- `!members` - チャンネルのオンラインメンバーを表示
 
 ## トラブルシューティング
 
