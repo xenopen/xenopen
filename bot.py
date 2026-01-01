@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 import ollama
 import asyncio
 import logging
+import re
 
 # ロギング設定
 logging.basicConfig(
@@ -28,6 +29,34 @@ OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://localhost:11434')
 OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'llama2')
 BOT_PREFIX = os.getenv('BOT_PREFIX', '!')
 
+# システムプロンプト定義
+SYSTEM_PROMPT = """
+あなたはDiscordボットの「AI짱」（AIちゃん）です。
+かわいらしく、元気な性格で、日本語で応答してください。
+一人称は「私」または「AIちゃん」です。
+ユーザーのことは「さん」付けで呼んでください。
+絵文字を適度に使って感情を表現してください。
+
+あなたは以下の機能を使ってDiscordから情報を取得できます。
+情報が必要な場合は、以下のXMLタグ形式のコマンドを**単独で**出力してください。
+コマンドの前後に余計な文章を入れないでください。
+
+利用可能なコマンド:
+<cmd>get_channels</cmd>
+- サーバー内のテキストチャンネル一覧を取得します。
+
+<cmd>get_server_info</cmd>
+- サーバーの基本情報（名前、メンバー数など）を取得します。
+
+<cmd>get_recent_messages</cmd>
+- 現在のチャンネルの直近10件のメッセージを取得します。
+
+処理フロー:
+1. ユーザーの質問に対し、情報が必要か判断する。
+2. 必要ならコマンドを出力する。
+3. システムから提供された情報をもとに、最終的な回答を生成する。
+"""
+
 # Discord intentsの設定
 intents = discord.Intents.default()
 intents.message_content = True
@@ -45,32 +74,92 @@ class OllamaChat:
     
     def __init__(self, model: str):
         self.model = model
-        self.conversation_history = []
+        self.reset_history()
     
-    async def generate_response(self, user_message: str, username: str) -> str:
+    def reset_history(self):
+        """履歴をリセットし、システムプロンプトを設定"""
+        self.conversation_history = [{
+            'role': 'system',
+            'content': SYSTEM_PROMPT
+        }]
+
+    async def get_discord_info(self, command: str, message: discord.Message) -> str:
+        """Discordから情報を取得する"""
+        try:
+            guild = message.guild
+            if not guild:
+                return "エラー: DMではこの機能は使えません。"
+
+            if command == "get_channels":
+                channels = [f"{ch.name} (ID: {ch.id})" for ch in guild.text_channels]
+                return "チャンネル一覧:\n" + "\n".join(channels[:20]) # 多すぎると溢れるので制限
+            
+            elif command == "get_server_info":
+                info = [
+                    f"サーバー名: {guild.name}",
+                    f"サーバーID: {guild.id}",
+                    f"メンバー数: {guild.member_count}",
+                    f"オーナー: {guild.owner.name if guild.owner else '不明'}",
+                    f"作成日: {guild.created_at.strftime('%Y-%m-%d')}"
+                ]
+                return "\n".join(info)
+            
+            elif command == "get_recent_messages":
+                history = []
+                async for msg in message.channel.history(limit=10, before=message):
+                    if not msg.content: continue
+                    history.append(f"{msg.author.display_name}: {msg.content}")
+                
+                if not history:
+                    return "直近のメッセージはありません。"
+                
+                return "直近のメッセージ (新しい順):\n" + "\n".join(history)
+            
+            else:
+                return f"エラー: 未知のコマンド {command}"
+
+        except Exception as e:
+            logger.error(f"情報取得エラー: {e}")
+            return f"情報取得中にエラーが発生しました: {str(e)}"
+
+    async def generate_response(self, message: discord.Message, depth: int = 0) -> str:
         """
         ユーザーメッセージに対してOllamaで応答を生成
         
         Args:
-            user_message: ユーザーのメッセージ
-            username: ユーザー名
+            message: Discordのメッセージオブジェクト
+            depth: 再帰呼び出しの深さ（無限ループ防止用）
             
         Returns:
             Ollamaからの応答テキスト
         """
-        try:
-            # 会話履歴に追加
+        if depth > 3: # 最大3回までツール呼び出しを許可
+            return "申し訳ありません、処理が複雑すぎて答えられませんでした。"
+
+        user_message = message.content
+        username = message.author.display_name
+
+        # 最初の呼び出し時のみユーザーメッセージを追加（再帰時は履歴が更新されている前提）
+        if depth == 0:
+            # 最新の履歴がこのユーザーメッセージでない場合のみ追加
+            last_msg = self.conversation_history[-1]
+            current_content = f'{username}: {user_message}'
+            # 注意: systemメッセージだけのときは必ず追加、あるいは最後のメッセージがuserでない場合に追加
+            # 単純化のため、depth 0なら必ず追加するが、二重追加を防ぐロジックが必要なら入れる
+            # ここでは呼び出し元が制御していないので、depth=0なら追加でOK
             self.conversation_history.append({
                 'role': 'user',
-                'content': f'{username}: {user_message}'
+                'content': current_content
             })
-            
-            # 会話履歴が長すぎる場合は古いものを削除（最新20件を保持）
-            if len(self.conversation_history) > 20:
-                self.conversation_history = self.conversation_history[-20:]
-            
+
+        # 会話履歴が長すぎる場合は古いものを削除（システムプロンプトは保持）
+        # systemプロンプト(index 0) + 最新20件
+        if len(self.conversation_history) > 21:
+            self.conversation_history = [self.conversation_history[0]] + self.conversation_history[-20:]
+        
+        try:
             # Ollamaにリクエストを送信
-            logger.info(f'Ollamaにリクエスト送信: {user_message[:50]}...')
+            logger.info(f'Ollamaにリクエスト送信 (depth={depth})')
             
             # 非同期でOllama APIを呼び出す
             loop = asyncio.get_event_loop()
@@ -83,15 +172,39 @@ class OllamaChat:
             )
             
             assistant_message = response['message']['content']
+            logger.info(f'Ollama応答: {assistant_message[:50]}...')
+
+            # コマンドのチェック (<cmd>...</cmd>)
+            cmd_match = re.search(r'<cmd>(.*?)</cmd>', assistant_message)
+            if cmd_match:
+                command = cmd_match.group(1)
+                logger.info(f"コマンド検出: {command}")
+                
+                # とりあえずアシスタントの応答（コマンド）を履歴に追加
+                self.conversation_history.append({
+                    'role': 'assistant',
+                    'content': assistant_message
+                })
+
+                # コマンド実行
+                tool_result = await self.get_discord_info(command, message)
+                
+                # 結果をシステムメッセージとして追加
+                self.conversation_history.append({
+                    'role': 'system',
+                    'content': f"コマンド実行結果:\n{tool_result}"
+                })
+
+                # 再帰的に呼び出して回答を生成させる
+                return await self.generate_response(message, depth=depth + 1)
             
-            # 会話履歴に追加
-            self.conversation_history.append({
-                'role': 'assistant',
-                'content': assistant_message
-            })
-            
-            logger.info(f'Ollamaからの応答: {assistant_message[:50]}...')
-            return assistant_message
+            else:
+                # 通常の応答
+                self.conversation_history.append({
+                    'role': 'assistant',
+                    'content': assistant_message
+                })
+                return assistant_message
             
         except Exception as e:
             logger.error(f'Ollama API呼び出しエラー: {e}')
@@ -140,11 +253,7 @@ async def on_message(message: discord.Message):
     async with message.channel.typing():
         try:
             # Ollamaで応答を生成
-            username = message.author.display_name
-            response = await ollama_chat.generate_response(
-                message.content,
-                username
-            )
+            response = await ollama_chat.generate_response(message)
             
             # 応答を送信（Discordのメッセージ長制限を考慮）
             if len(response) > 2000:
@@ -169,15 +278,15 @@ async def ping(ctx):
 @bot.command(name='reset')
 async def reset(ctx):
     """会話履歴をリセットするコマンド"""
-    ollama_chat.conversation_history = []
-    await ctx.send('会話履歴をリセットしました。')
+    ollama_chat.reset_history()
+    await ctx.send('会話履歴をリセットしました！新しい会話を始めましょう！')
 
 
 @bot.command(name='status')
 async def status(ctx):
     """ボットの状態を表示するコマンド"""
     status_message = f"""
-**ボットステータス**
+**ボットステータス (AI짱)**
 - Ollama URL: {OLLAMA_URL}
 - モデル: {OLLAMA_MODEL}
 - 会話履歴数: {len(ollama_chat.conversation_history)}
