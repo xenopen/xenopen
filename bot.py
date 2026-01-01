@@ -11,9 +11,9 @@ import ollama
 import asyncio
 import logging
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional, Set, Union
 
 # ロギング設定
 logging.basicConfig(
@@ -31,6 +31,7 @@ TARGET_CHANNEL_ID = int(os.getenv('TARGET_CHANNEL_ID', '0'))
 OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://localhost:11434')
 OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'llama2')
 BOT_PREFIX = os.getenv('BOT_PREFIX', '!')
+HISTORY_AFTER = os.getenv('HISTORY_AFTER')  # 日付基準で履歴を取得する開始日時
 
 # Discord intentsの設定
 intents = discord.Intents.default()
@@ -48,6 +49,47 @@ DATA_DIR = Path('data')
 DATA_DIR.mkdir(exist_ok=True)
 TRAINING_DATA_FILE = DATA_DIR / 'training_data.jsonl'
 LAST_MESSAGE_ID_FILE = DATA_DIR / 'last_message_id.txt'
+
+
+def parse_date_string(date_str: str) -> Optional[datetime]:
+    """
+    日付文字列をdatetimeオブジェクトに変換
+    
+    Args:
+        date_str: 日付文字列（ISO形式: "2024-01-01T00:00:00" または "2024-01-01"）
+    
+    Returns:
+        datetimeオブジェクト、パースに失敗した場合はNone
+    """
+    if not date_str:
+        return None
+    
+    try:
+        # ISO形式を試す
+        if 'T' in date_str:
+            return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+        else:
+            # 日付のみの場合は時刻を00:00:00に設定
+            return datetime.fromisoformat(date_str + 'T00:00:00')
+    except ValueError:
+        try:
+            # その他の形式を試す
+            formats = [
+                '%Y-%m-%d %H:%M:%S',
+                '%Y/%m/%d %H:%M:%S',
+                '%Y-%m-%d',
+                '%Y/%m/%d'
+            ]
+            for fmt in formats:
+                try:
+                    return datetime.strptime(date_str, fmt)
+                except ValueError:
+                    continue
+        except Exception:
+            pass
+    
+    logger.warning(f'日付文字列のパースに失敗しました: {date_str}')
+    return None
 
 
 class ConversationHistoryManager:
@@ -85,16 +127,106 @@ class ConversationHistoryManager:
             logger.error(f'処理済みID保存エラー: {e}')
     
     async def fetch_channel_history(self, channel: discord.TextChannel, limit: Optional[int] = None) -> List[discord.Message]:
-        """チャンネルの会話履歴を取得"""
+        """チャンネルの会話履歴を取得（レート制限を考慮）"""
         messages = []
         try:
             logger.info(f'チャンネル履歴を取得中... (limit: {limit or "無制限"})')
+            count = 0
             async for message in channel.history(limit=limit, oldest_first=True):
                 messages.append(message)
+                count += 1
+                # レート制限を避けるため、一定数ごとに少し待機
+                if count % 50 == 0:
+                    await asyncio.sleep(0.5)
             logger.info(f'{len(messages)}件のメッセージを取得しました')
+        except discord.HTTPException as e:
+            if e.status == 429:
+                logger.warning('レート制限に達しました。しばらく待機します...')
+                await asyncio.sleep(5)
+            else:
+                logger.error(f'履歴取得エラー: {e}')
         except Exception as e:
             logger.error(f'履歴取得エラー: {e}')
         return messages
+    
+    async def fetch_history_by_date_range(
+        self,
+        channel: discord.TextChannel,
+        after_date: datetime,
+        limit_per_batch: int = 100
+    ) -> List[discord.Message]:
+        """
+        日付基準で段階的に全メッセージを取得
+        
+        Args:
+            channel: チャンネル
+            after_date: 開始日時
+            limit_per_batch: 1回の取得で取得する最大件数（デフォルト: 100）
+        
+        Returns:
+            取得した全メッセージのリスト
+        """
+        all_messages = []
+        current_date = after_date
+        batch_count = 0
+        
+        logger.info(f'日付基準で段階的に履歴を取得開始: {after_date.isoformat()}以降')
+        
+        while True:
+            try:
+                batch_count += 1
+                batch_messages = []
+                count = 0
+                
+                # 現在の日付以降のメッセージを取得
+                async for message in channel.history(
+                    after=current_date,
+                    limit=limit_per_batch,
+                    oldest_first=True
+                ):
+                    batch_messages.append(message)
+                    count += 1
+                    # レート制限を避けるため、一定数ごとに少し待機
+                    if count % 50 == 0:
+                        await asyncio.sleep(0.5)
+                
+                # 取得したメッセージが0件の場合、ループ終了
+                if len(batch_messages) == 0:
+                    logger.info('これ以上取得できるメッセージがありません。取得を終了します。')
+                    break
+                
+                # 取得したメッセージを追加
+                all_messages.extend(batch_messages)
+                
+                # 取得したメッセージの中で最新の日付を取得
+                latest_date = max(msg.created_at for msg in batch_messages)
+                
+                # 進捗表示
+                logger.info(
+                    f'バッチ {batch_count}: {len(batch_messages)}件取得 '
+                    f'(累計: {len(all_messages)}件, 最新日時: {latest_date.isoformat()})'
+                )
+                
+                # 最新日付を1ミリ秒進めて、次の取得の開始点とする
+                # これにより、同じメッセージを重複して取得することを防ぐ
+                current_date = latest_date + timedelta(milliseconds=1)
+                
+                # レート制限を避けるため、バッチ間で待機
+                await asyncio.sleep(1)
+                
+            except discord.HTTPException as e:
+                if e.status == 429:
+                    logger.warning('レート制限に達しました。しばらく待機します...')
+                    await asyncio.sleep(5)
+                else:
+                    logger.error(f'履歴取得エラー: {e}')
+                    break
+            except Exception as e:
+                logger.error(f'履歴取得エラー: {e}')
+                break
+        
+        logger.info(f'段階的履歴取得完了: 合計 {len(all_messages)}件のメッセージを取得しました')
+        return all_messages
     
     def save_message(self, message: discord.Message, is_assistant: bool = False):
         """メッセージを学習データとして保存"""
@@ -315,6 +447,52 @@ async def on_ready():
     await bot.change_presence(
         activity=discord.Game(name=f'Ollama ({OLLAMA_MODEL})で会話中')
     )
+    
+    # 初回起動時にチャンネル履歴を取得（バックグラウンドで実行）
+    try:
+        channel = bot.get_channel(TARGET_CHANNEL_ID)
+        if channel:
+            logger.info('初回起動時の履歴取得を開始...')
+            # バックグラウンドタスクとして実行（レート制限を避けるため）
+            asyncio.create_task(fetch_initial_history(channel))
+    except Exception as e:
+        logger.error(f'初回履歴取得エラー: {e}')
+
+
+async def fetch_initial_history(channel: discord.TextChannel):
+    """初回起動時にチャンネル履歴を取得（レート制限を考慮）"""
+    try:
+        # 環境変数HISTORY_AFTERが設定されている場合は段階的取得を使用
+        if HISTORY_AFTER:
+            after_date = parse_date_string(HISTORY_AFTER)
+            if after_date:
+                logger.info(f'日付基準で段階的に履歴を取得します: {after_date.isoformat()}以降')
+                messages = await history_manager.fetch_history_by_date_range(channel, after_date)
+            else:
+                logger.warning(f'HISTORY_AFTERの日付パースに失敗しました: {HISTORY_AFTER}。全履歴を取得します。')
+                messages = await history_manager.fetch_channel_history(channel, limit=None)
+        else:
+            logger.info('チャンネル履歴を取得中...（時間がかかる場合があります）')
+            # 全履歴を取得（limit=Noneで全件取得）
+            messages = await history_manager.fetch_channel_history(channel, limit=None)
+        
+        logger.info(f'{len(messages)}件のメッセージを取得しました。処理を開始...')
+        
+        new_count = 0
+        total_count = len(messages)
+        
+        for idx, msg in enumerate(messages, 1):
+            if msg.id not in history_manager.processed_message_ids:
+                history_manager.save_message(msg, is_assistant=(msg.author == bot.user))
+                new_count += 1
+            
+            # 進捗表示（100件ごと、または最後）
+            if idx % 100 == 0 or idx == total_count:
+                logger.info(f'進捗: {idx}/{total_count}件処理済み（新規: {new_count}件）')
+        
+        logger.info(f'初回履歴取得完了: {new_count}件の新しいメッセージを保存しました（総数: {total_count}件）')
+    except Exception as e:
+        logger.error(f'初回履歴取得エラー: {e}')
 
 
 @bot.event
@@ -337,14 +515,12 @@ async def on_message(message: discord.Message):
     if not message.content.strip():
         return
     
-    # チャンネル履歴を取得して保存（毎回実行）
+    # 新しいメッセージのみを保存（全履歴を取得しない）
     try:
-        channel_messages = await history_manager.fetch_channel_history(message.channel)
-        for msg in channel_messages:
-            if msg.id not in history_manager.processed_message_ids:
-                history_manager.save_message(msg, is_assistant=(msg.author == bot.user))
+        if message.id not in history_manager.processed_message_ids:
+            history_manager.save_message(message, is_assistant=False)
     except Exception as e:
-        logger.error(f'履歴取得・保存エラー: {e}')
+        logger.error(f'メッセージ保存エラー: {e}')
     
     # AI짱チェック: メッセージに「AI짱」が含まれるか、ボットへのメンションがあるか
     is_mentioned = bot.user in message.mentions
@@ -369,25 +545,17 @@ async def on_message(message: discord.Message):
                 use_saved_history=True
             )
             
-            # 応答を学習データとして保存
-            history_manager.save_conversation_pair(
-                clean_message,
-                response,
-                username,
-                message.created_at
-            )
-            
             # 応答を送信（Discordのメッセージ長制限を考慮）
             if len(response) > 2000:
                 # 長い場合は分割して送信
                 chunks = [response[i:i+2000] for i in range(0, len(response), 2000)]
                 for chunk in chunks:
                     sent_message = await message.channel.send(chunk)
-                    # ボットの応答も保存
+                    # ボットの応答を保存（save_messageのみを使用して重複を防ぐ）
                     history_manager.save_message(sent_message, is_assistant=True)
             else:
                 sent_message = await message.channel.send(response)
-                # ボットの応答も保存
+                # ボットの応答を保存（save_messageのみを使用して重複を防ぐ）
                 history_manager.save_message(sent_message, is_assistant=True)
                 
         except Exception as e:
