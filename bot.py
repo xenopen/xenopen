@@ -347,6 +347,54 @@ class ConversationHistoryManager:
             logger.error(f'統計取得エラー: {e}')
         
         return stats
+    
+    def get_latest_timestamp(self) -> Optional[datetime]:
+        """
+        保存済みメッセージの中で最新のtimestampを取得
+        
+        Returns:
+            最新のtimestamp（datetimeオブジェクト）、存在しない場合はNone
+        """
+        try:
+            if not self.data_file.exists():
+                return None
+            
+            latest_timestamp = None
+            
+            # ファイルの最後から読み込む（最新のメッセージを優先的に確認）
+            # 効率化のため、最後の1000行を確認
+            with open(self.data_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            # 最後から順に確認（最新のメッセージから）
+            for line in reversed(lines):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                    timestamp_str = data.get('timestamp')
+                    if timestamp_str:
+                        # ISO形式のtimestampをパース
+                        try:
+                            timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                            if latest_timestamp is None or timestamp > latest_timestamp:
+                                latest_timestamp = timestamp
+                        except (ValueError, AttributeError):
+                            continue
+                except json.JSONDecodeError:
+                    continue
+            
+            if latest_timestamp:
+                logger.info(f'保存済みメッセージの最新timestamp: {latest_timestamp.isoformat()}')
+            else:
+                logger.info('保存済みメッセージが見つかりませんでした')
+            
+            return latest_timestamp
+            
+        except Exception as e:
+            logger.error(f'最新timestamp取得エラー: {e}')
+            return None
 
 
 class OllamaChat:
@@ -463,15 +511,27 @@ async def on_ready():
 async def fetch_initial_history(channel: discord.TextChannel):
     """初回起動時にチャンネル履歴を取得（レート制限を考慮）"""
     try:
-        # 環境変数HISTORY_AFTERが設定されている場合は段階的取得を使用
-        if HISTORY_AFTER:
+        # 保存済みメッセージの最新timestampを取得
+        latest_timestamp = history_manager.get_latest_timestamp()
+        
+        # 優先順位: 1. 保存済みメッセージの最新timestamp, 2. 環境変数HISTORY_AFTER, 3. 全履歴
+        after_date = None
+        
+        if latest_timestamp:
+            # 保存済みメッセージの最新timestamp以降を取得
+            after_date = latest_timestamp
+            logger.info(f'既存データの最新日時以降を取得します: {after_date.isoformat()}以降')
+        elif HISTORY_AFTER:
+            # 環境変数HISTORY_AFTERが設定されている場合
             after_date = parse_date_string(HISTORY_AFTER)
             if after_date:
-                logger.info(f'日付基準で段階的に履歴を取得します: {after_date.isoformat()}以降')
-                messages = await history_manager.fetch_history_by_date_range(channel, after_date)
+                logger.info(f'環境変数HISTORY_AFTERに基づいて履歴を取得します: {after_date.isoformat()}以降')
             else:
                 logger.warning(f'HISTORY_AFTERの日付パースに失敗しました: {HISTORY_AFTER}。全履歴を取得します。')
-                messages = await history_manager.fetch_channel_history(channel, limit=None)
+        
+        # 日付が指定されている場合は段階的取得を使用
+        if after_date:
+            messages = await history_manager.fetch_history_by_date_range(channel, after_date)
         else:
             logger.info('チャンネル履歴を取得中...（時間がかかる場合があります）')
             # 全履歴を取得（limit=Noneで全件取得）
