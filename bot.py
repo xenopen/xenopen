@@ -371,6 +371,7 @@ class OllamaChat:
         try:
             # 保存済み履歴を読み込んでコンテキストに追加
             messages_for_ollama = []
+            saved_history = []
             if use_saved_history:
                 saved_history = self.history_manager.load_history_for_context(max_messages=30)
                 messages_for_ollama.extend(saved_history)
