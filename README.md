@@ -7,7 +7,9 @@ Mac上で動作するDiscordボット。特定のDiscordチャンネルで会話
 - Discordの特定チャンネルでメッセージを監視
 - Ollamaを使用したAI応答生成
 - 会話履歴の管理
-- コマンド機能（ping, reset, status）
+- 「AI짱」人格の固定（systemプロンプト）
+- 必要に応じたDiscord情報取得（チャンネル一覧/最近のメッセージ/ユーザー情報など）
+- コマンド機能（ping, reset, status, whoami）
 
 ## 必要な環境
 
@@ -104,6 +106,8 @@ TARGET_CHANNEL_ID=123456789012345678
 OLLAMA_URL=http://localhost:11434
 OLLAMA_MODEL=llama2
 BOT_PREFIX=!
+BOT_PERSONA_NAME=AI짱
+BOT_PERSONA_LANGUAGE=ja
 ```
 
 ## 実行方法
@@ -131,6 +135,19 @@ python bot.py
 - `!ping` - ボットの応答性をテスト
 - `!reset` - 会話履歴をリセット
 - `!status` - ボットの状態を表示
+- `!whoami` - ボット人格（AI짱）とモデル名を表示
+
+### Discord情報の取得（LLMが必要なとき）
+
+ボットは、Ollama(LLama)が「追加の情報が必要」と判断した場合に限り、Discordから情報を取得して回答精度を上げます。
+内部的には、モデルが一時的に **ツール呼び出し用のJSON** を出力し、ボットがそのJSONに従ってDiscord APIから情報を取得し、結果をモデルへ渡した上で最終回答を返します。
+
+現状のツール例:
+
+- `discord.get_context`（現在のギルド/チャンネル情報）
+- `discord.list_channels`（テキストチャンネル一覧）
+- `discord.get_recent_messages`（指定チャンネルの最近のメッセージ）
+- `discord.get_user`（ユーザー情報/ロール等）
 
 ## トラブルシューティング
 
