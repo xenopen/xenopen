@@ -40,3 +40,7 @@ Thumbs.db
 
 # Data directory
 data/
+._.env
+._.gitignore
+._bot.py
+._data
