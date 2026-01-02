@@ -36,30 +36,30 @@ HISTORY_AFTER = os.getenv('HISTORY_AFTER')  # 日付基準で履歴を取得す�
 
 # システムプロンプト定義
 SYSTEM_PROMPT = """
-あなたはDiscordボットの「AI짱」（AIちゃん）です。
-かわいらしく、元気な性格で、日本語で応答してください。
-一人称は「私」または「AIちゃん」です。
-ユーザーのことは「さん」付けで呼んでください。
-絵文字を適度に使って感情を表現してください。
+당신은 Discord 봇 "AI짱"입니다.
+귀엽고 활기찬 성격으로 한국어로 대답해주세요.
+1인칭은 "저" 또는 "AI짱"입니다.
+사용자를 부를 때는 "님"을 붙여주세요.
+이모티콘을 적절히 사용하여 감정을 표현해주세요.
 
-あなたは以下の機能を使ってDiscordから情報を取得できます。
-情報が必要な場合は、以下のXMLタグ形式のコマンドを**単独で**出力してください。
-コマンドの前後に余計な文章を入れないでください。
+당신은 다음 기능을 사용하여 Discord에서 정보를 얻을 수 있습니다.
+정보가 필요한 경우, 다음 XML 태그 형식의 명령어를 **단독으로** 출력해주세요.
+명령어 앞뒤에 다른 문장을 넣지 마세요.
 
-利用可能なコマンド:
+사용 가능한 명령어:
 <cmd>get_channels</cmd>
-- サーバー内のテキストチャンネル一覧を取得します。
+- 서버 내 텍스트 채널 목록을 가져옵니다.
 
 <cmd>get_server_info</cmd>
-- サーバーの基本情報（名前、メンバー数など）を取得します。
+- 서버 기본 정보(이름, 멤버 수 등)를 가져옵니다.
 
 <cmd>get_recent_messages</cmd>
-- 現在のチャンネルの直近10件のメッセージを取得します。
+- 현재 채널의 최근 메시지 10건을 가져옵니다.
 
-処理フロー:
-1. ユーザーの質問に対し、情報が必要か判断する。
-2. 必要ならコマンドを出力する。
-3. システムから提供された情報をもとに、最終的な回答を生成する。
+처리 흐름:
+1. 사용자 질문에 정보가 필요한지 판단합니다.
+2. 필요하면 명령어를 출력합니다.
+3. 시스템에서 제공한 정보를 바탕으로 최종 답변을 생성합니다.
 """
 
 # Discord intentsの設定
@@ -446,19 +446,19 @@ class OllamaChat:
         try:
             guild = message.guild
             if not guild:
-                return "エラー: DMではこの機能は使えません。"
+                return "오류: DM에서는 이 기능을 사용할 수 없습니다."
 
             if command == "get_channels":
                 channels = [f"{ch.name} (ID: {ch.id})" for ch in guild.text_channels]
-                return "チャンネル一覧:\n" + "\n".join(channels[:20]) # 多すぎると溢れるので制限
+                return "채널 목록:\n" + "\n".join(channels[:20]) # 多すぎると溢れるので制限
             
             elif command == "get_server_info":
                 info = [
-                    f"サーバー名: {guild.name}",
-                    f"サーバーID: {guild.id}",
-                    f"メンバー数: {guild.member_count}",
-                    f"オーナー: {guild.owner.name if guild.owner else '不明'}",
-                    f"作成日: {guild.created_at.strftime('%Y-%m-%d')}"
+                    f"서버 이름: {guild.name}",
+                    f"서버 ID: {guild.id}",
+                    f"멤버 수: {guild.member_count}",
+                    f"소유자: {guild.owner.name if guild.owner else '알 수 없음'}",
+                    f"생성일: {guild.created_at.strftime('%Y-%m-%d')}"
                 ]
                 return "\n".join(info)
             
@@ -469,16 +469,16 @@ class OllamaChat:
                     history.append(f"{msg.author.display_name}: {msg.content}")
                 
                 if not history:
-                    return "直近のメッセージはありません。"
+                    return "최근 메시지가 없습니다."
                 
-                return "直近のメッセージ (新しい順):\n" + "\n".join(history)
+                return "최근 메시지 (최신순):\n" + "\n".join(history)
             
             else:
-                return f"エラー: 未知のコマンド {command}"
+                return f"오류: 알 수 없는 명령어 {command}"
 
         except Exception as e:
             logger.error(f"情報取得エラー: {e}")
-            return f"情報取得中にエラーが発生しました: {str(e)}"
+            return f"정보를 가져오는 중 오류가 발생했습니다: {str(e)}"
 
     async def generate_response(self, message: discord.Message, depth: int = 0, use_saved_history: bool = True, user_message: Optional[str] = None) -> str:
         """
@@ -494,7 +494,7 @@ class OllamaChat:
             Ollamaからの応答テキスト
         """
         if depth > 3: # 最大3回までツール呼び出しを許可
-            return "申し訳ありません、処理が複雑すぎて答えられませんでした。"
+            return "죄송합니다, 처리가 너무 복잡해서 대답할 수 없습니다."
 
         if user_message is None:
             user_message = message.content
@@ -586,7 +586,7 @@ class OllamaChat:
             
         except Exception as e:
             logger.error(f'Ollama API呼び出しエラー: {e}')
-            return f'エラーが発生しました: {str(e)}'
+            return f'오류가 발생했습니다: {str(e)}'
 
 
 # 会話履歴マネージャーの初期化
@@ -606,7 +606,7 @@ async def on_ready():
     
     # ボットのステータスを設定
     await bot.change_presence(
-        activity=discord.Game(name=f'Ollama ({OLLAMA_MODEL})で会話中')
+        activity=discord.Game(name=f'Ollama ({OLLAMA_MODEL})와 대화 중')
     )
     
     # 初回起動時にチャンネル履歴を取得（バックグラウンドで実行）
@@ -728,7 +728,7 @@ async def on_message(message: discord.Message):
                 
         except Exception as e:
             logger.error(f'メッセージ処理エラー: {e}')
-            await message.channel.send(f'エラーが発生しました: {str(e)}')
+            await message.channel.send(f'오류가 발생했습니다: {str(e)}')
 
 
 @bot.command(name='ping')
@@ -741,7 +741,7 @@ async def ping(ctx):
 async def reset(ctx):
     """会話履歴をリセットするコマンド"""
     ollama_chat.reset_history()
-    await ctx.send('会話履歴をリセットしました！新しい会話を始めましょう！')
+    await ctx.send('대화 기록을 초기화했습니다! 새로운 대화를 시작합시다!')
 
 
 @bot.command(name='status')
@@ -749,14 +749,14 @@ async def status(ctx):
     """ボットの状態を表示するコマンド"""
     stats = history_manager.get_statistics()
     status_message = f"""
-**ボットステータス (AI짱)**
+**봇 상태 (AI짱)**
 - Ollama URL: {OLLAMA_URL}
-- モデル: {OLLAMA_MODEL}
-- 会話履歴数: {len(ollama_chat.conversation_history)}
-- 監視チャンネル: <#{TARGET_CHANNEL_ID}>
-- 保存済みメッセージ数: {stats['total_messages']}件
-  - ユーザー: {stats['user_messages']}件
-  - アシスタント: {stats['assistant_messages']}件
+- 모델: {OLLAMA_MODEL}
+- 대화 기록 수: {len(ollama_chat.conversation_history)}
+- 감시 채널: <#{TARGET_CHANNEL_ID}>
+- 저장된 메시지 수: {stats['total_messages']}건
+  - 사용자: {stats['user_messages']}건
+  - 어시스턴트: {stats['assistant_messages']}건
 """
     await ctx.send(status_message)
 
@@ -766,12 +766,12 @@ async def history(ctx):
     """保存済み会話履歴の統計を表示するコマンド"""
     stats = history_manager.get_statistics()
     history_message = f"""
-**会話履歴統計**
-- 総メッセージ数: {stats['total_messages']}件
-- ユーザーメッセージ: {stats['user_messages']}件
-- アシスタントメッセージ: {stats['assistant_messages']}件
-- データファイル: `{TRAINING_DATA_FILE}`
-- 処理済みメッセージID数: {len(history_manager.processed_message_ids)}件
+**대화 기록 통계**
+- 총 메시지 수: {stats['total_messages']}건
+- 사용자 메시지: {stats['user_messages']}건
+- 어시스턴트 메시지: {stats['assistant_messages']}건
+- 데이터 파일: `{TRAINING_DATA_FILE}`
+- 처리된 메시지 ID 수: {len(history_manager.processed_message_ids)}건
 """
     await ctx.send(history_message)
 
@@ -782,7 +782,7 @@ async def export(ctx):
     stats = history_manager.get_statistics()
     
     if stats['total_messages'] == 0:
-        await ctx.send('保存されている学習データがありません。')
+        await ctx.send('저장된 학습 데이터가 없습니다.')
         return
     
     file_size = 0
@@ -790,15 +790,15 @@ async def export(ctx):
         file_size = TRAINING_DATA_FILE.stat().st_size
     
     export_message = f"""
-**学習データエクスポート情報**
-- データファイル: `{TRAINING_DATA_FILE}`
-- ファイルサイズ: {file_size / 1024:.2f} KB
-- 総メッセージ数: {stats['total_messages']}件
-- ユーザーメッセージ: {stats['user_messages']}件
-- アシスタントメッセージ: {stats['assistant_messages']}件
+**학습 데이터 내보내기 정보**
+- 데이터 파일: `{TRAINING_DATA_FILE}`
+- 파일 크기: {file_size / 1024:.2f} KB
+- 총 메시지 수: {stats['total_messages']}건
+- 사용자 메시지: {stats['user_messages']}건
+- 어시스턴트 메시지: {stats['assistant_messages']}건
 
-データは既に `{TRAINING_DATA_FILE}` にJSONL形式で保存されています。
-このファイルをそのままモデルの学習に使用できます。
+데이터는 이미 `{TRAINING_DATA_FILE}` 에 JSONL 형식으로 저장되어 있습니다.
+이 파일을 그대로 모델 학습에 사용할 수 있습니다.
 """
     await ctx.send(export_message)
 
