@@ -1,0 +1,1 @@
+{"version":3,"file":"qbittorrent.d.ts","sourceRoot":"","sources":["qbittorrent.ts"],"names":[],"mappings":"AAGA,qBAAa,kBAAkB;IAC7B,OAAO,CAAC,MAAM,CAAgB;IAC9B,OAAO,CAAC,MAAM,CAAuB;;IAQ/B,KAAK,IAAI,OAAO,CAAC,OAAO,CAAC;IAuBzB,WAAW,IAAI,OAAO,CAAC,GAAG,EAAE,CAAC;IAmB7B,UAAU,CAAC,UAAU,EAAE,MAAM,GAAG,OAAO,CAAC,OAAO,CAAC;CA6BvD"}

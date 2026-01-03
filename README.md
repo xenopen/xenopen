@@ -1,155 +1,78 @@
-# Discord AI Agent (Ollama連携)
+# Personal App Integration Manager
 
-Mac上で動作するDiscordボット。特定のDiscordチャンネルで会話を監視し、Ollamaを使用してAI応答を生成します。
+個人的に使用するアプリケーション (Notion, qBittorrent, Discordなど) を連携し、自動化するためのツールです。
+設定やタスク管理はNotionデータベースを通じて行います。
 
 ## 機能
 
-- Discordの特定チャンネルでメッセージを監視
-- Ollamaを使用したAI応答生成
-- 会話履歴の管理
-- コマンド機能（ping, reset, status）
+- **Notion連携**: 設定値やタスクの管理をNotionデータベースで行います。
+- **qBittorrent連携**: アクティブなトレントの監視などが可能です。
+- **Discord連携**: 通知やメッセージ送信を行います。
+- **自動実行**: 定期的にNotionを確認し、タスクを実行します。
 
-## 必要な環境
+## 前提条件
 
-- Python 3.8以上
-- Mac OS
-- Ollama（ローカルで起動している必要があります）
-- Discord Bot Token
+- Node.js (v18以上推奨)
+- Notion アカウントとインテグレーション設定
+- Discord Bot Token (通知を受け取る場合)
+- qBittorrent WebUI (有効化されている場合)
 
-## セットアップ手順
+## セットアップ
 
-### 1. Ollamaのインストールと起動
+1. **リポジトリのクローンと依存関係のインストール**
 
-```bash
-# Ollamaをインストール（まだの場合）
-# https://ollama.ai からダウンロードしてインストール
+   ```bash
+   npm install
+   ```
 
-# Ollamaを起動（通常は自動で起動します）
-# ターミナルで確認:
-curl http://localhost:11434/api/tags
-```
+2. **環境変数の設定**
 
-### 2. モデルのダウンロード
+   `.env.example` をコピーして `.env` を作成し、必要な情報を入力します。
 
-```bash
-# 使用したいモデルをダウンロード（例: llama2）
-ollama pull llama2
+   ```bash
+   cp .env.example .env
+   ```
 
-# 他のモデルも利用可能:
-# ollama pull mistral
-# ollama pull codellama
-# ollama pull llama2:13b
-```
+   - `NOTION_API_KEY`: Notionインテグレーションのシークレットキー
+   - `NOTION_DATABASE_ID`: 設定用データベースのID
+   - `DISCORD_TOKEN`: Discord Botのトークン
+   - `DISCORD_CHANNEL_ID`: 通知を送るチャンネルID
+   - `QBITTORRENT_URL`: WebUIのURL (例: http://localhost:8080)
 
-### 3. Discord Botの作成
+3. **Notionデータベースの準備**
 
-1. [Discord Developer Portal](https://discord.com/developers/applications) にアクセス
-2. 「New Application」をクリックしてアプリケーションを作成
-3. 「Bot」セクションに移動
-4. 「Add Bot」をクリック
-5. 「Token」をコピー（後で使用します）
-6. 「Privileged Gateway Intents」セクションで以下を有効化:
-   - MESSAGE CONTENT INTENT
-   - SERVER MEMBERS INTENT（必要に応じて）
+   Notionで新しいデータベースを作成し、以下のプロパティを追加してください。
 
-### 4. ボットをサーバーに招待
+   | プロパティ名 | 種類 (Type) | 説明 |
+   | --- | --- | --- |
+   | **Name** | Title | 設定項目名やタスク名 |
+   | **Value** | Text | 設定値やメッセージ内容 |
+   | **Enabled** | Checkbox | 有効/無効の切り替え |
+   | **Type** | Select | `Config`, `Task`, `DiscordMessage` などの種別 |
 
-1. 「OAuth2」→「URL Generator」に移動
-2. 「Scopes」で以下を選択:
-   - `bot`
-   - `applications.commands`
-3. 「Bot Permissions」で以下を選択:
-   - `Send Messages`
-   - `Read Message History`
-   - `View Channels`
-4. 生成されたURLをコピーしてブラウザで開き、ボットをサーバーに招待
+   ※ 作成したデータベースに、作成したNotionインテグレーションコネクトを追加することを忘れないでください。
 
-### 5. チャンネルIDの取得
+4. **実行**
 
-1. Discordで開発者モードを有効化:
-   - 設定 → 詳細設定 → 開発者モードをON
-2. 監視したいチャンネルを右クリック
-3. 「IDをコピー」を選択
+   開発モードで実行:
+   ```bash
+   npm run dev
+   ```
 
-### 6. プロジェクトのセットアップ
+   ビルドして実行:
+   ```bash
+   npm run build
+   npm start
+   ```
 
-```bash
-# リポジトリをクローン（またはダウンロード）
-cd /workspace
+## 対応アプリケーション状況
 
-# 仮想環境を作成（推奨）
-python3 -m venv venv
-source venv/bin/activate
+- ✅ **Notion**: 設定・データソースとして完全対応
+- ✅ **Discord**: 通知送信に対応
+- ✅ **qBittorrent**: ログイン・一覧取得に対応
+- ⚠️ **Apple Calendar**: 現在API制限により未実装 (将来的にiCal連携などで対応検討)
+- ⚠️ **Notion Calendar**: Notionデータベース経由で管理可能
 
-# 依存関係をインストール
-pip install -r requirements.txt
+## カスタマイズ
 
-# 環境変数ファイルを作成
-cp .env.example .env
-
-# .envファイルを編集して設定を入力
-# DISCORD_TOKEN: Discord Bot Token
-# TARGET_CHANNEL_ID: 監視するチャンネルのID
-# OLLAMA_URL: OllamaのURL（デフォルト: http://localhost:11434）
-# OLLAMA_MODEL: 使用するモデル名（デフォルト: llama2）
-```
-
-### 7. .envファイルの編集
-
-`.env`ファイルを開いて、以下の値を設定してください:
-
-```env
-DISCORD_TOKEN=your_discord_bot_token_here
-TARGET_CHANNEL_ID=123456789012345678
-OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL=llama2
-BOT_PREFIX=!
-```
-
-## 実行方法
-
-```bash
-# 仮想環境をアクティベート（まだの場合）
-source venv/bin/activate
-
-# ボットを起動
-python bot.py
-```
-
-ボットが正常に起動すると、指定したチャンネルでメッセージを監視し始めます。
-
-## 使い方
-
-### 基本的な使い方
-
-1. 指定したDiscordチャンネルでメッセージを送信
-2. ボットが自動的にメッセージを検知
-3. Ollamaで応答を生成してチャンネルに送信
-
-### コマンド
-
-- `!ping` - ボットの応答性をテスト
-- `!reset` - 会話履歴をリセット
-- `!status` - ボットの状態を表示
-
-## トラブルシューティング
-
-### Ollamaに接続できない
-
-- Ollamaが起動しているか確認: `curl http://localhost:11434/api/tags`
-- `.env`ファイルの`OLLAMA_URL`が正しいか確認
-
-### ボットがメッセージに反応しない
-
-- `.env`ファイルの`TARGET_CHANNEL_ID`が正しいか確認
-- ボットがチャンネルにアクセスできるか確認
-- ボットの権限（MESSAGE CONTENT INTENT）が有効か確認
-
-### モデルが見つからない
-
-- モデルがダウンロードされているか確認: `ollama list`
-- `.env`ファイルの`OLLAMA_MODEL`が正しいか確認
-
-## ライセンス
-
-このプロジェクトはMITライセンスの下で公開されています。
+`src/index.ts` 内のロジックを編集することで、特定の `Type` や `Name` に応じた処理を追加できます。
